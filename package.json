@@ -1,0 +1,30 @@
+{
+  "name": "commandcode-proxy",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Command Code → OpenAI 兼容代理 | OpenAI-compatible reverse proxy for Command Code API",
+  "license": "MIT",
+  "author": "MAXeaglet",
+  "main": "proxy.mjs",
+  "scripts": {
+    "start": "node proxy.mjs",
+    "dev": "node --watch proxy.mjs",
+    "docker:build": "docker build -t commandcode-proxy:latest .",
+    "docker:build:multi": "docker buildx build --platform linux/amd64,linux/arm64 -t commandcode-proxy:latest .",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "commandcode",
+    "openai",
+    "proxy",
+    "api",
+    "claude",
+    "anthropic",
+    "deepseek"
+  ]
+}

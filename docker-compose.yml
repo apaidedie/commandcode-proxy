@@ -1,0 +1,86 @@
+version: "3.9"
+
+services:
+  # ========================================
+  # Command Code Proxy 服务
+  # ========================================
+  commandcode-proxy:
+    image: commandcode-proxy:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: commandcode-proxy
+    restart: unless-stopped
+
+    # 端口映射
+    ports:
+      - "${PROXY_PORT:-3050}:3050"
+
+    # 环境变量配置
+    environment:
+      # 服务配置
+      PORT: "${PORT:-3050}"
+      HOST: "${HOST:-0.0.0.0}"
+
+      # API 配置
+      CC_API_BASE: "${CC_API_BASE:-https://api.commandcode.ai}"
+      PROJECT_SLUG: "${PROJECT_SLUG:-cc-proxy}"
+
+      # 日志配置
+      LOG_FILE: "${LOG_FILE:-}"
+      LOG_LEVEL: "${LOG_LEVEL:-info}"
+
+      # 模型配置
+      CC_USE_PROVIDER_MODELS: "${CC_USE_PROVIDER_MODELS:-true}"
+
+      # 时区设置
+      TZ: "${TZ:-Asia/Shanghai}"
+
+    # 卷挂载（可选 - 用于持久化日志和配置）
+    volumes:
+      - ./logs:/app/logs
+      # 如果需要自定义配置，取消下面的注释
+      # - ./config.json:/app/config.json:ro
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:3050/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # 资源限制（可选）
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+    # 网络配置
+    networks:
+      - proxy-network
+
+    # 日志配置
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ========================================
+# 网络配置
+# ========================================
+networks:
+  proxy-network:
+    driver: bridge
+
+# ========================================
+# 卷配置（如果需要持久化数据）
+# ========================================
+volumes:
+  proxy-logs:
+    driver: local
