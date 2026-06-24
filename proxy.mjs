@@ -239,6 +239,11 @@ async function ensureInitialized(apiKey, signal) {
     // 并行发两个预请求
     const headers = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json, */*',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Connection': 'keep-alive',
+      'User-Agent': `commandcode-cli/${CC_VERSION} Node.js/${process.version}`,
       'x-cli-environment': 'production',
       'Authorization': `Bearer ${apiKey}`,
       'x-command-code-version': CC_VERSION,
@@ -329,12 +334,22 @@ const MODELS = [
 // 从 sessionId 构造一个假的工作目录路径，再按真实 CLI 规则生成 slug
 // 结果形如 "d-users-dev-projects-web-app-a3f2" (和真实 CLI 的 slug 格式一致)
 function fakeProjectSlug(sessionId) {
+  const users = ['dev', 'user', 'admin', 'alice', 'bob', 'john', 'work', 'code'];
+  const dirs = ['projects', 'code', 'repos', 'workspace', 'src', 'work', 'github', 'dev'];
   const names = ['app', 'api', 'backend', 'bot', 'cli', 'core', 'data', 'frontend',
     'lib', 'plugin', 'proxy', 'server', 'service', 'tool', 'web', 'worker'];
-  const name = names[parseInt(sessionId.slice(0, 4), 16) % names.length];
+
+  const user = users[parseInt(sessionId.slice(0, 2), 16) % users.length];
+  const dir = dirs[parseInt(sessionId.slice(2, 4), 16) % dirs.length];
+  const name = names[parseInt(sessionId.slice(4, 6), 16) % names.length];
   const suffix = sessionId.slice(0, 4);
-  // 模拟一个类似 C:\Users\dev\projects\{name}-{suffix} 的路径
-  const path = `C:\\Users\\dev\\projects\\${name}-${suffix}`;
+
+  // 随机 Windows 或 Unix 路径
+  const isWindows = parseInt(sessionId.slice(6, 8), 16) % 2 === 0;
+  const path = isWindows
+    ? `C:\\Users\\${user}\\${dir}\\${name}-${suffix}`
+    : `/home/${user}/${dir}/${name}-${suffix}`;
+
   return path
     .toLowerCase()
     .replace(/^[a-z]:/i, '')
@@ -759,6 +774,11 @@ async function forwardToCC(body, apiKey, incomingHeaders = {}, signal) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'Accept': 'application/json, */*',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Connection': 'keep-alive',
+      'User-Agent': `commandcode-cli/${CC_VERSION} Node.js/${process.version}`,
       'Authorization': `Bearer ${apiKey}`,
       'x-cli-environment': 'production',
       'x-command-code-version': CC_VERSION,
@@ -1779,6 +1799,11 @@ async function fetchModels(apiKey) {
 
     const response = await fetch(`${CFG.apiBase}/provider/v1/models`, {
       headers: {
+        'Accept': 'application/json, */*',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive',
+        'User-Agent': `commandcode-cli/${CC_VERSION} Node.js/${process.version}`,
         'Authorization': `Bearer ${apiKey}`,
         'x-cli-environment': 'production',
         'x-command-code-version': CC_VERSION,
