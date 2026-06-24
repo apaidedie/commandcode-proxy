@@ -91,20 +91,36 @@ make health    # 健康检查
 make logs      # 查看日志
 ```
 
-### 方式 3：Docker Compose
+### 方式 3：Docker Compose（推荐）
 
 ```bash
-# 1. 创建配置文件
-cp .env.example .env
+# 创建 docker-compose.yml
+cat > docker-compose.yml << 'EOF'
+services:
+  commandcode-proxy:
+    image: al1ya/commandcode-proxy:latest
+    container_name: commandcode-proxy
+    restart: unless-stopped
+    ports:
+      - '3050:3050'
+    volumes:
+      - ./logs:/app/logs
+EOF
 
-# 2. 启动服务
+# 启动服务
 docker compose up -d
 
-# 3. 查看日志
+# 查看日志
 docker compose logs -f
 
-# 4. 健康检查
+# 健康检查
 curl http://localhost:3050/health
+```
+
+**注意**：仓库中的 `docker-compose.yml` 已精简为最小配置。如需完整配置（环境变量、健康检查、资源限制），请使用 `docker-compose.full.yml`：
+
+```bash
+docker compose -f docker-compose.full.yml up -d
 ```
 
 ### 方式 4：本地运行
