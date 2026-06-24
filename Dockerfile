@@ -14,8 +14,13 @@ RUN apk add --no-cache wget
 # ── 阶段 2: 生产镜像 ──
 FROM base AS production
 
+# 复制依赖描述并安装
+COPY package.json ./
+RUN npm install --omit=dev --no-audit --no-fund && \
+    npm cache clean --force
+
 # 复制应用文件
-COPY package.json proxy.mjs ./
+COPY proxy.mjs ./
 COPY config.json ./
 
 # 创建日志目录
