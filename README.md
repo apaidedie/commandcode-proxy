@@ -6,6 +6,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-22-green.svg)](https://nodejs.org/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
+[![Docker Hub](https://img.shields.io/docker/pulls/al1ya/commandcode-proxy.svg)](https://hub.docker.com/r/al1ya/commandcode-proxy)
+[![GitHub Actions](https://github.com/apaidedie/commandcode-proxy/workflows/Build%20and%20Publish%20Docker%20Images/badge.svg)](https://github.com/apaidedie/commandcode-proxy/actions)
 
 基于官方 CLI v0.32.3 网络流量分析构建，完整复刻 Command Code API 协议。
 
@@ -31,6 +33,26 @@
 ---
 
 ## 🚀 快速开始
+
+### 方式 0：使用预构建镜像（最快）
+
+无需克隆代码，直接使用发布的镜像：
+
+```bash
+# 使用 Docker Hub 镜像
+docker run -d \
+  --name commandcode-proxy \
+  -p 3050:3050 \
+  al1ya/commandcode-proxy:latest
+
+# 或使用 GitHub Container Registry
+docker run -d \
+  --name commandcode-proxy \
+  -p 3050:3050 \
+  ghcr.io/apaidedie/commandcode-proxy:latest
+```
+
+支持多架构：`linux/amd64` 和 `linux/arm64`
 
 ### 方式 1：一键部署脚本（推荐）
 
