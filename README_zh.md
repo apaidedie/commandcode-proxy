@@ -13,7 +13,7 @@
 
 ```bash
 # 克隆项目
-git clone https://github.com/YOUR_USERNAME/commandcode-proxy.git
+git clone https://github.com/apaidedie/commandcode-proxy.git
 cd commandcode-proxy
 
 # 运行部署脚本

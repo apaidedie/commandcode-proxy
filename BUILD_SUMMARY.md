@@ -302,7 +302,7 @@ docker compose exec commandcode-proxy sh
 
 ## 📞 支持
 
-- GitHub Issues: [提交问题](https://github.com/YOUR_USERNAME/commandcode-proxy/issues)
+- GitHub Issues: [提交问题](https://github.com/apaidedie/commandcode-proxy/issues)
 - 原项目: [MAXeaglet/commandcode-proxy](https://github.com/MAXeaglet/commandcode-proxy)
 - Command Code: [官网](https://www.commandcode.ai/)
 
