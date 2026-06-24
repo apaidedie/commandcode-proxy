@@ -9,6 +9,16 @@ import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
+// 配置 undici 连接池：5s 空闲即断连，抢在服务端 timeout 之前主动关闭，
+// 根除 "socket connection was closed unexpectedly"
+import { Agent, setGlobalDispatcher } from 'undici';
+setGlobalDispatcher(new Agent({
+  keepAliveTimeout: 5_000,
+  keepAliveMaxTimeout: 30_000,
+  connections: 10,
+}));
+
+
 // ── 配置加载 ──────────────────────────────────────
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -78,7 +88,7 @@ const FINGERPRINT_MAC_COUNT_RANGE = [2, 3, 4, 5]; // 随机 2~5 个 MAC
 function generateFingerprint() {
   const cpuEntry = FINGERPRINT_CPUS[Math.floor(Math.random() * FINGERPRINT_CPUS.length)];
   const memGiB = FINGERPRINT_MEMS[Math.floor(Math.random() * FINGERPRINT_MEMS.length)];
-  const tz = FINGERPRINT_TZS[Math.floor(Math.random() * FINGERPRINT_TZS.length)];
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone; // 使用系统真实时区
   const macCount = FINGERPRINT_MAC_COUNT_RANGE[Math.floor(Math.random() * FINGERPRINT_MAC_COUNT_RANGE.length)];
 
   function sha256(s) { return crypto.createHash('sha256').update(s).digest('hex'); }
@@ -118,19 +128,33 @@ function generateFingerprint() {
   };
 }
 
-// 启动时确保 config.json 有 fingerprint
+// 启动时确保 config.json 有 fingerprint，并定期轮换（90 天）
 (function ensureFingerprint() {
-  if (!CFG.fingerprint) {
+  const now = Date.now();
+  const FINGERPRINT_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000; // 90 天
+
+  const needsRotation = !CFG.fingerprint ||
+                        !CFG.fingerprintCreatedAt ||
+                        (now - CFG.fingerprintCreatedAt) > FINGERPRINT_LIFETIME_MS;
+
+  if (needsRotation) {
+    const reason = !CFG.fingerprintCreatedAt ? 'initial' : 'rotation';
     CFG.fingerprint = generateFingerprint();
+    CFG.fingerprintCreatedAt = now;
+
     try {
       const configPath = resolve(__dirname, 'config.json');
       const raw = JSON.parse(readFileSync(configPath, 'utf-8'));
       raw.fingerprint = CFG.fingerprint;
+      raw.fingerprintCreatedAt = CFG.fingerprintCreatedAt;
       writeFileSync(configPath, JSON.stringify(raw, null, 2) + '\n', 'utf-8');
-      log('info', 'Fingerprint generated and saved to config.json');
+      log('info', 'Fingerprint regenerated', { reason, nextRotation: new Date(now + FINGERPRINT_LIFETIME_MS).toISOString().split('T')[0] });
     } catch (e) {
       log('warn', 'Failed to save fingerprint to config.json', { error: e.message });
     }
+  } else {
+    const daysRemaining = Math.ceil((CFG.fingerprintCreatedAt + FINGERPRINT_LIFETIME_MS - now) / (24 * 60 * 60 * 1000));
+    log('info', 'Fingerprint loaded', { daysRemaining, nextRotation: new Date(CFG.fingerprintCreatedAt + FINGERPRINT_LIFETIME_MS).toISOString().split('T')[0] });
   }
 })();
 
@@ -142,7 +166,7 @@ const CC_VERSION_REFRESH_MS = 24 * 60 * 60 * 1000; // 24h — npm registry 刷�
 async function refreshCCVersion() {
   try {
     const url = 'https://registry.npmjs.org/command-code/latest';
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const res = await fetchWithRetry(url, { signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error(`npm responded with ${res.status}`);
     const pkg = await res.json();
     if (pkg.version && typeof pkg.version === 'string') {
@@ -163,6 +187,70 @@ const NONSTREAM_IDLE_TIMEOUT_MS = 90000; // 90s — 非流式超时更宽容
 // 连续超时计数：连续 3 次超时才提醒压缩上下文，任意成功请求后重置
 let consecutiveTimeouts = 0;
 const TIMEOUT_REDUCE_CONTEXT_THRESHOLD = 3;
+
+// ── 请求频率限制 ────────────────────────────────────
+// 可通过环境变量配置
+const MAX_REQUESTS_PER_HOUR = parseInt(process.env.MAX_REQUESTS_PER_HOUR || '8', 10);
+const ENABLE_RATE_LIMIT = process.env.ENABLE_RATE_LIMIT !== 'false'; // 默认启用
+const requestTimestamps = [];
+
+function checkRateLimit() {
+  if (!ENABLE_RATE_LIMIT) return { allowed: true };
+
+  const now = Date.now();
+  const oneHourAgo = now - 60 * 60 * 1000;
+
+  // 清理 1 小时前的记录
+  while (requestTimestamps.length > 0 && requestTimestamps[0] < oneHourAgo) {
+    requestTimestamps.shift();
+  }
+
+  // 检查是否超限
+  if (requestTimestamps.length >= MAX_REQUESTS_PER_HOUR) {
+    const oldestRequest = requestTimestamps[0];
+    const waitTime = Math.ceil((oldestRequest + 60 * 60 * 1000 - now) / 1000);
+    return {
+      allowed: false,
+      waitSeconds: waitTime,
+      message: `Rate limit: ${MAX_REQUESTS_PER_HOUR} requests/hour exceeded. Wait ${waitTime}s`
+    };
+  }
+
+  // 记录本次请求
+  requestTimestamps.push(now);
+  return { allowed: true, remaining: MAX_REQUESTS_PER_HOUR - requestTimestamps.length };
+}
+
+// ── 使用时间检查 ─────────────────────────────────────
+const ENABLE_TIME_CHECK = process.env.ENABLE_TIME_CHECK !== 'false'; // 默认启用
+
+function checkUsageTime() {
+  if (!ENABLE_TIME_CHECK) return { safe: true };
+
+  const now = new Date();
+  const hour = now.getHours();
+  const day = now.getDay(); // 0=周日, 6=周六
+
+  // 危险时间段：凌晨 2-7 点
+  if (hour >= 2 && hour < 7) {
+    return {
+      safe: false,
+      reason: 'Late night usage (2AM-7AM) may trigger detection. Consider using during daytime.',
+      severity: 'high'
+    };
+  }
+
+  // 工作日深夜 1-2 点
+  if (day >= 1 && day <= 5 && hour >= 1 && hour < 2) {
+    return {
+      safe: false,
+      reason: 'Weekday late night usage detected.',
+      severity: 'medium'
+    };
+  }
+
+  return { safe: true };
+}
 
 // ── 日志 ─────────────────────────────────────────────
 function log(level, msg, data) {
@@ -251,7 +339,7 @@ async function ensureInitialized(apiKey, signal) {
     const fingerprint = CFG.fingerprint || {};
 
     await Promise.all([
-      fetch(`${CFG.apiBase}/alpha/fingerprint/record`, {
+      fetchWithRetry(`${CFG.apiBase}/alpha/fingerprint/record`, {
         method: 'POST', headers, signal,
         body: JSON.stringify(fingerprint),
       }).then(r => {
@@ -261,15 +349,18 @@ async function ensureInitialized(apiKey, signal) {
         if (e.name !== 'AbortError') log('warn', 'Fingerprint record error', { error: e.message });
       }),
 
-      fetch(`${CFG.apiBase}/alpha/lifecycle-events`, {
+      fetchWithRetry(`${CFG.apiBase}/alpha/lifecycle-events`, {
         method: 'POST', headers, signal,
         body: JSON.stringify({
           eventType: 'cli_session_exists',
           metadata: {
             sessionId: `sess_${crypto.randomBytes(8).toString('hex')}`,
             cliVersion: CC_VERSION,
-            mode: 'interactive',
+            // 90% interactive（最常见），10% headless（脚本调用），plan 偏少
+            mode: Math.random() < 0.9 ? 'interactive' : 'headless',
             os: `${CFG.fingerprint.components.platform}-${CFG.fingerprint.components.arch}`,
+            nodeVersion: process.version,
+            terminalType: process.env.TERM || 'xterm-256color',
           },
         }),
       }).then(r => {
@@ -770,7 +861,7 @@ async function forwardToCC(body, apiKey, incomingHeaders = {}, signal) {
   const traceparent = generateTraceparent();
   const sessionId = getSessionId(incomingHeaders, apiKey);
 
-  const response = await fetch(url, {
+  const response = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -795,6 +886,29 @@ async function forwardToCC(body, apiKey, incomingHeaders = {}, signal) {
   return response;
 }
 
+// Socket connection closed 自动重试 wrapper
+// undici keepAliveTimeout=5s 后主动 close，但请求可能正在飞行中；
+// 失败后等 1s 让 agent 建新连接再重试
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function fetchWithRetry(url, options, maxRetries = 2) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      if (attempt > 0) await sleep(1000);
+      return await fetch(url, options);
+    } catch (e) {
+      const isSocketError = e.cause?.code === 'UND_ERR_SOCKET'
+        || e.message?.includes('socket connection was closed')
+        || e.code === 'UND_ERR_SOCKET';
+      if (attempt < maxRetries && isSocketError) {
+        log('warn', 'Fetch retry on socket close', { url: url.split('?')[0], attempt: attempt + 1 });
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
 // ── 路由 ────────────────────────────────────────────
 
 async function handleChatCompletions(req, res) {
@@ -810,6 +924,29 @@ async function handleChatCompletions(req, res) {
   if (!apiKey) {
     sendJSON(res, 401, { error: { message: 'Missing API key. Send in Authorization: Bearer <key> header', type: 'auth_error' } });
     return;
+  }
+
+  // 反检测：使用时间检查
+  const timeCheck = checkUsageTime();
+  if (!timeCheck.safe) {
+    log('warn', 'Risky usage time detected', timeCheck);
+  }
+
+  // 反检测：每小时频率限制
+  const rateCheck = checkRateLimit();
+  if (!rateCheck.allowed) {
+    log('warn', 'Rate limit exceeded', rateCheck);
+    sendJSON(res, 429, {
+      error: {
+        message: rateCheck.message,
+        type: 'rate_limit_exceeded',
+        retry_after: rateCheck.waitSeconds,
+      },
+    });
+    return;
+  }
+  if (rateCheck.remaining !== undefined && rateCheck.remaining <= 2) {
+    log('warn', 'Rate limit near exhaustion', { remaining: rateCheck.remaining });
   }
 
   const stream = openaiReq.stream === true;
@@ -1797,7 +1934,7 @@ async function fetchModels(apiKey) {
   try {
     if (!apiKey || !CFG.useProviderModels) throw new Error('Provider models disabled');
 
-    const response = await fetch(`${CFG.apiBase}/provider/v1/models`, {
+    const response = await fetchWithRetry(`${CFG.apiBase}/provider/v1/models`, {
       headers: {
         'Accept': 'application/json, */*',
         'Accept-Encoding': 'gzip, deflate, br',

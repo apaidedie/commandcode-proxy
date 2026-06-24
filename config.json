@@ -6,5 +6,31 @@
   "logFile": "",
   "logLevel": "info",
   "useProviderModels": true,
-  "modelRefreshIntervalMs": 300000
+  "modelRefreshIntervalMs": 300000,
+  "fingerprint": {
+    "thumbmark": "d40895d07fb10e6c5d604cb9aa8aa6cd566e3e368bdc987f28ee74e1319022d1",
+    "components": {
+      "machineIdHash": "822c750f381e087ba94d9c64f9c49814dffc5f8722587bb97e5b500f2a302e6f",
+      "macHashes": [
+        "3834edc5588140b7e2bc02121185dd32033698ce674d8550031ef8520818feb6",
+        "a60139ec4f27c59e3a4106d74143de0b4110df3da0347f27bf8cd4e35385a7ce",
+        "df0d3c4d573565a605f343171e1eefcc91e9751b1464e66bce808dc61ecad9ba",
+        "add02880f04eb2238e4df29a59570e8710a6a511e985af9293ff1e03a5f01588"
+      ],
+      "osUserHash": "ddc5977a2343303956d7598ef4018ead4839cb0b7b53178ee1f76857a71a3a95",
+      "hostnameHash": "d3c2b247da42880cef568655ad20cde51368e2e95aeca038e6ac45620d39fca6",
+      "gitEmailHash": "3b2735a180516fccb8dded60dd7bcfbc2041caaa77f332c0ba5624ec0e6434fb",
+      "platform": "win32",
+      "arch": "x64",
+      "osRelease": "10.0.22631",
+      "cpuModel": "12th Gen Intel(R) Core(TM) i7-12650H",
+      "cpuCount": 10,
+      "memGiB": 16,
+      "isContainer": false,
+      "timezone": "Asia/Hong_Kong",
+      "runtime": "cli",
+      "collectorVersion": 1
+    }
+  },
+  "fingerprintCreatedAt": 1782324853274
 }
